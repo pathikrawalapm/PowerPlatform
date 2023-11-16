@@ -1,0 +1,121 @@
+name: UCL RM Full Release
+run-name: ${{ github.workflow }} ${{ github.run_number }}
+#Deploy all RM artifacts to all environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      core-run-id:
+        description: Unique ID of the Core CI build to be released
+        required: true
+      run-id:
+        description: Unique ID of the RM CI build to be released
+        required: true
+jobs:
+  deploy-to-sid:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/full-release.yml
+    secrets: inherit
+    concurrency: 
+      group: sid-environment
+    with:
+      crm-env: "CRM SID"
+      core-run-id: ${{ github.event.inputs.core-run-id }}
+      run-id: ${{ github.event.inputs.run-id }}
+  deploy-to-fat:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/full-release.yml
+    secrets: inherit
+    concurrency: 
+      group: fat-environment
+    with:
+      crm-env: "CRM FAT"
+      core-run-id: ${{ github.event.inputs.core-run-id }}
+      run-id: ${{ github.event.inputs.run-id }}
+  deploy-to-sit:
+    if: github.ref == 'refs/heads/main'
+    needs: [deploy-to-sid, deploy-to-fat]
+    uses: ./.github/workflows/full-release.yml
+    secrets: inherit
+    concurrency:
+      group: sit-environment
+    with:
+      crm-env: "CRM SIT"
+      core-run-id: ${{ github.event.inputs.core-run-id }}
+      run-id: ${{ github.event.inputs.run-id }}
+  deploy-to-uat:
+    if: github.ref == 'refs/heads/main'
+    needs: [deploy-to-sid, deploy-to-fat]
+    uses: ./.github/workflows/full-release.yml
+    secrets: inherit
+    concurrency: 
+      group: uat-environment
+    with:
+      crm-env: "CRM UAT"
+      core-run-id: ${{ github.event.inputs.core-run-id }}
+      run-id: ${{ github.event.inputs.run-id }}
+  deploy-to-training:
+    if: github.ref == 'refs/heads/main'
+    needs: [deploy-to-sid, deploy-to-fat]
+    uses: ./.github/workflows/full-release.yml
+    secrets: inherit
+    concurrency: 
+      group: training-environment
+    with:
+      crm-env: "CRM Training"
+      core-run-id: ${{ github.event.inputs.core-run-id }}
+      run-id: ${{ github.event.inputs.run-id }}
+  deploy-to-preprod:
+    if: github.ref == 'refs/heads/main'
+    needs: [deploy-to-uat]
+    uses: ./.github/workflows/full-release.yml
+    secrets: inherit
+    concurrency: 
+      group: preprod-environment
+    with:
+      crm-env: "CRM Preproduction"
+      core-run-id: ${{ github.event.inputs.core-run-id }}
+      run-id: ${{ github.event.inputs.run-id }}
+  deploy-to-production:
+    if: github.ref == 'refs/heads/main'
+    needs: [deploy-to-preprod]
+    uses: ./.github/workflows/full-release.yml
+    secrets: inherit
+    concurrency: 
+      group: prod-environment
+    with:
+      crm-env: "CRM Production"
+      core-run-id: ${{ github.event.inputs.core-run-id }}
+      run-id: ${{ github.event.inputs.run-id }}
+  deploy-to-hfxuat:
+    if: github.ref == 'refs/heads/hotfix'
+    uses: ./.github/workflows/full-release.yml
+    secrets: inherit
+    concurrency: 
+      group: hfxuat-environment
+    with:
+      crm-env: "CRM Hotfix UAT"
+      core-run-id: ${{ github.event.inputs.core-run-id }}
+      run-id: ${{ github.event.inputs.run-id }}
+  deploy-to-hfxpreprod:
+    if: github.ref == 'refs/heads/hotfix'
+    needs: [deploy-to-hfxuat]
+    uses: ./.github/workflows/full-release.yml
+    secrets: inherit
+    concurrency: 
+      group: preprod-environment
+    with:
+      crm-env: "CRM Preproduction"
+      core-run-id: ${{ github.event.inputs.core-run-id }}
+      run-id: ${{ github.event.inputs.run-id }}
+  deploy-to-hfxproduction:
+    if: github.ref == 'refs/heads/hotfix'
+    needs: [deploy-to-hfxpreprod]
+    uses: ./.github/workflows/full-release.yml
+    secrets: inherit
+    concurrency: 
+      group: prod-environment
+    with:
+      crm-env: "CRM Production"
+      core-run-id: ${{ github.event.inputs.core-run-id }}
+      run-id: ${{ github.event.inputs.run-id }}
