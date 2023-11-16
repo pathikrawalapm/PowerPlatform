@@ -1,0 +1,149 @@
+name: Commit Solution Changes
+run-name: ${{ github.workflow }} for ${{ github.event.inputs.solution_name }} ${{ github.run_number }}
+# Export solution from DEV environment
+#  unpack it and prepare, commit and push to source branch the changes
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Change this value
+      solution_name:
+        description: Name of the CRM solution to commit changes for'
+        required: true
+        type: choice
+        options:
+          - UCLCustomisation
+          - UCLFlowCustomisations
+          - UCLSLAs
+          - UCLHelpPages
+          - UCLCleanupFlows
+      jira_issues:
+        description: Comma-delimited list of Jira issue references against which the changes should be committed
+        required: true
+        default: RRM-
+        
+# Only allow a single build to dev environment at a time
+concurrency: dev-environment        
+
+env:
+  CLIENT_ID: ${{secrets.CLIENTID}}
+  SECRET: ${{secrets.SECRET}}
+  TENANT_ID: ${{vars.TENANTID}}
+  SOLUTION_EXPORTED_FOLDER: 'exported/'
+  SOLUTION_FOLDER: 'Solutions/'
+  GH_API_PAT: ${{secrets.GHAPIPAT}}
+jobs:
+  set-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      env_name: ${{ steps.set-env.outputs.env_name }}
+    steps:
+    - name: Set Environment Name
+      id: set-env
+      run: |
+        if [ "${{ github.ref }}" = "refs/heads/hotfix" ]; then
+          echo "env_name=CRM Hotfix Development" >> "$GITHUB_OUTPUT"
+        else
+          echo "env_name=CRM Development" >> "$GITHUB_OUTPUT"
+        fi
+  export-from-dev-and-commit:
+    needs: set-environment
+    runs-on: windows-latest
+    environment: ${{ needs.set-environment.outputs.env_name }}
+    steps:
+    - name: Install Power Platform Tools
+      id: install-power-platform-tools
+      uses: microsoft/powerplatform-actions/actions-install@v1
+    - name: Set Git Config
+      id: set-git-config
+      run: |
+        git config --global core.longpaths true 
+    - name: Get Latest Initial
+      id: get-latest-initial
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        token: ${{ env.GH_API_PAT }}
+    - name: Get Current Branch Name
+      id: get-current-branch
+      uses: tj-actions/branch-names@v6
+    - name: Sync Solution Version for Main Branch
+      id: sync-solution-for-main-branch
+      if: github.ref == 'refs/heads/main'
+      shell: powershell
+      run: |
+        .\Build\Scripts\SyncSolutionVersion.ps1 -serverURL ${{vars.URL}} -clientId ${{env.CLIENT_ID}} -secret ${{env.SECRET}} -solutionUniqueName ${{ github.event.inputs.solution_name }} -incrementBuild $true -incrementRevision $false
+    - name: Sync Solution Version for Hotfix Branch
+      id: sync-solution-for-hotfix-branch
+      if: github.ref == 'refs/heads/hotfix'
+      shell: powershell
+      run: |
+        .\Build\Scripts\SyncSolutionVersion.ps1 -serverURL ${{vars.URL}} -clientId ${{env.CLIENT_ID}} -secret ${{env.SECRET}} -solutionUniqueName ${{ github.event.inputs.solution_name }} -incrementBuild $false -incrementRevision $true
+    - name: Publish Customisations
+      id: publish-customisations
+      uses: microsoft/powerplatform-actions/publish-solution@v1
+      with:
+        environment-url: ${{vars.URL}}
+        app-id: ${{env.CLIENT_ID}}
+        client-secret: ${{env.SECRET}}
+        tenant-id: ${{env.TENANT_ID}}
+        run-asynchronously: true
+    - name: Export Unmanaged Solution from DEV environment
+      id: export-unmanaged-solution
+      uses: microsoft/powerplatform-actions/export-solution@v1
+      with:
+        environment-url: ${{vars.URL}}
+        app-id: ${{env.CLIENT_ID}}
+        client-secret: ${{env.SECRET}}
+        tenant-id: ${{env.TENANT_ID}}
+        solution-name: ${{ github.event.inputs.solution_name }}
+        solution-output-file: ${{ env.SOLUTION_EXPORTED_FOLDER }}/${{ github.event.inputs.solution_name }}.zip
+        run-asynchronously: true
+        managed: false
+        overwrite: true
+    - name: Export Managed Solution from DEV environment
+      id: export-managed-solution
+      uses: microsoft/powerplatform-actions/export-solution@v1
+      with:
+        environment-url: ${{vars.URL}}
+        app-id: ${{env.CLIENT_ID}}
+        client-secret: ${{env.SECRET}}
+        tenant-id: ${{env.TENANT_ID}}
+        solution-name: ${{ github.event.inputs.solution_name }}
+        solution-output-file: ${{ env.SOLUTION_EXPORTED_FOLDER }}/${{ github.event.inputs.solution_name }}_managed.zip
+        run-asynchronously: true
+        managed: true
+        overwrite: true
+    - name: Git Pull Latest
+      id: git-pull-latest
+      run: |
+        git config user.name "${{ github.triggering_actor }}"
+        git config user.email "<>"
+        git pull
+    - name: Unpack Solutions First Pass
+      id: unpack-solutions-first-pass
+      uses: microsoft/powerplatform-actions/unpack-solution@v1
+      with:
+        solution-file: ${{ env.SOLUTION_EXPORTED_FOLDER }}/${{ github.event.inputs.solution_name }}.zip
+        solution-folder: ${{ env.SOLUTION_FOLDER }}/${{ github.event.inputs.solution_name }}
+        solution-type: 'Both'
+        overwrite-files: true
+    - name: Unpack Solutions Second Pass
+      id: unpack-solutions-second-pass
+      uses: microsoft/powerplatform-actions/unpack-solution@v1
+      with:
+        solution-file: ${{ env.SOLUTION_EXPORTED_FOLDER }}/${{ github.event.inputs.solution_name }}.zip
+        solution-folder: ${{ env.SOLUTION_FOLDER }}/${{ github.event.inputs.solution_name }}
+        solution-type: 'Both'
+        overwrite-files: true
+        process-canvas-apps: true
+    - name: Commit Changes to GitHub
+      id: commit-changes
+      run: |
+        git config user.name "${{ github.triggering_actor }}"
+        git config user.email "<>"
+        git add ${{ env.SOLUTION_FOLDER }}/${{ github.event.inputs.solution_name }} --all
+        git commit -m "${{ github.event.inputs.jira_issues }} ${{ github.event.inputs.solution_name }} Solution Changes"
+        git push origin ${{ steps.get-current-branch.outputs.current_branch }}
+    
+        
