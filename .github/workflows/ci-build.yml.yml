@@ -1,0 +1,177 @@
+name: UCL RM CI Build
+run-name: ${{ github.workflow }} ${{ github.run_number }}
+#Collate all RM build artifacts
+
+on:
+  workflow_run:
+    workflows: 
+      - Build UCL Solutions
+      - Build Third Party Solutions
+      - Build Third Party Packages
+      - Build Scripts and Settings
+      - Build Reference Data
+      - Build Portal Configurations
+      - Build Infrastructure as Code
+      - Build Tests
+      - Build Plugins
+    types: 
+      - completed
+    branches: [main,hotfix]
+env:
+  GH_API_PAT: ${{secrets.GHAPIPAT}}
+jobs:
+  tag-source-commit:
+    runs-on: ubuntu-latest
+    outputs:
+      triggering_branch: ${{ steps.set-triggering-branch.outputs.branch }}
+    steps:
+       - name: Set Triggering Branch
+         id: set-triggering-branch
+         shell: bash
+         run: |
+          echo "branch=${{ github.event.workflow_run.head_branch }}" >> "$GITHUB_OUTPUT"
+       - name: Set Git Config
+         id: set-git-config
+         run: |
+           git config --global core.longpaths true 
+       - name: Get Latest
+         id: get-latest
+         uses: actions/checkout@v3
+         with:
+           fetch-depth: 0
+           token: ${{ env.GH_API_PAT }}
+       - name: Tag Repository
+         id: tag-repository
+         shell: pwsh
+         run: |
+           .\Build\Scripts\TagRepository.ps1 -commitId ${{github.event.workflow_run.head_commit.id}} -tagMessage "CI Build ${{github.run_id}}"  -triggeringUsername "${{ github.triggering_actor }}" -branchName "${{ github.event.workflow_run.head_branch }}"
+  collate-all-build-artifacts:
+    needs: tag-source-commit
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Print Branch
+        run: |
+          echo "Branch: ${{ needs.tag-source-commit.outputs.triggering_branch }}"
+      - name: Download UCL Solutions Build Artifact
+        id: download-ucl-solutions-build-artifact
+        uses: dawidd6/action-download-artifact@v2.24.3
+        with:
+          github_token: ${{ env.GH_API_PAT }}
+          workflow: build-ucl-solutions.yml
+          branch: ${{ needs.tag-source-commit.outputs.triggering_branch }}
+          name: UCL Solutions
+          path: UCL Solutions
+      - name: Download Third Party Solutions Build Artifact
+        id: download-third-party-solutions-build-artifact
+        uses: dawidd6/action-download-artifact@v2.24.3
+        with:
+          github_token: ${{ env.GH_API_PAT }}
+          workflow: build-third-party-solutions.yml
+          branch: ${{ needs.tag-source-commit.outputs.triggering_branch }}
+          name: Third Party Solutions
+          path: Third Party Solutions
+      - name: Download Iac Build Artifact
+        id: download-Iac-build-artifact
+        uses: dawidd6/action-download-artifact@v2.24.3
+        with:
+          github_token: ${{ env.GH_API_PAT }}
+          workflow: build-iac.yml
+          branch: ${{ needs.tag-source-commit.outputs.triggering_branch }}
+          name: Infrastructure
+          path: Infrastructure    
+      - name: Download Third Party Packages Build Artifact
+        id: download-third-party-packages-build-artifact
+        uses: dawidd6/action-download-artifact@v2.24.3
+        with:
+          github_token: ${{ env.GH_API_PAT }}
+          workflow: build-third-party-packages.yml
+          branch: ${{ needs.tag-source-commit.outputs.triggering_branch }}
+          name: Third Party Packages
+          path: Third Party Packages
+      - name: Download Build Scripts and Settings Build Artifact
+        id: download-build-scripts-and-settings-build-artifact
+        uses: dawidd6/action-download-artifact@v2.24.3
+        with:
+          github_token: ${{ env.GH_API_PAT }}
+          workflow: build-scripts-and-settings.yml
+          branch: ${{ needs.tag-source-commit.outputs.triggering_branch }}
+          name: Build
+          path: Build
+      - name: Download Reference Data Build Artifact
+        id: download-reference-data-build-artifact
+        uses: dawidd6/action-download-artifact@v2.24.3
+        with:
+          github_token: ${{ env.GH_API_PAT }}
+          workflow: build-reference-data.yml
+          branch: ${{ needs.tag-source-commit.outputs.triggering_branch }}
+          name: Data
+          path: Data
+      - name: Download Portal Configurations Build Artifact
+        id: download-portal-configurations-build-artifact
+        uses: dawidd6/action-download-artifact@v2.24.3
+        with:
+          github_token: ${{ env.GH_API_PAT }}
+          workflow: build-portal-configurations.yml
+          branch: ${{ needs.tag-source-commit.outputs.triggering_branch }}
+          name: Portal Configurations
+          path: Portal Configurations
+      - name: Download UI Tests Build Artifact
+        if: ${{ needs.tag-source-commit.outputs.triggering_branch != 'hotfix'}}
+        id: download-ui-tests-build-artifact
+        uses: dawidd6/action-download-artifact@v2.24.3
+        with:
+          github_token: ${{ env.GH_API_PAT }}
+          workflow: build-tests.yml
+          branch: ${{ needs.tag-source-commit.outputs.triggering_branch }}
+          name: "UI Tests"
+          path: "UI Tests"
+      - name: Upload UCL solutions as Build Artifacts
+        id: upload-ucl-solution-as-build-artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: UCL Solutions
+          path: 'UCL Solutions/**'
+      - name: Upload Third Party Solutions as Build Artifacts
+        id: upload-third-party-solutions-as-build-artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Third Party Solutions
+          path: 'Third Party Solutions/**'
+      - name: Upload Iac as Build Artifacts
+        id: upload-Iac-as-build-artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Infrastructure
+          path: 'Infrastructure/**'    
+      - name: Upload Third Party Packages as Build Artifacts
+        id: upload-third-party-packages-as-build-artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Third Party Packages
+          path: 'Third Party Packages/**'
+      - name: Upload Build Scripts and Settings as Build Artifacts
+        id: upload-build-scripts-and-settings-as-build-artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Build
+          path: 'Build/**'
+      - name: Upload Reference Data as Build Artifacts
+        id: upload-reference-data-as-build-artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Data
+          path: 'Data/**'
+      - name: Upload Portal Configurations as Build Artifacts
+        id: upload-portal-configurations-as-build-artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Portal Configurations
+          path: 'Portal Configurations/**'
+      - name: Upload UI Tests as Build Artifacts
+        if: ${{ needs.tag-source-commit.outputs.triggering_branch != 'hotfix'}}
+        id: upload-ui-tests-as-build-artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: "UI Tests"
+          path: "UI Tests/**"
